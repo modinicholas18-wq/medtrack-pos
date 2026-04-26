@@ -1,73 +1,96 @@
-# React + TypeScript + Vite
+# 💊 MedTrack POS
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**MedTrack POS** is a modern, offline-first pharmacy point-of-sale system designed for efficient sales, inventory tracking, and pharmacy management.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🚀 Features
 
-## React Compiler
+* 🧾 POS system for fast sales processing
+* 📦 Inventory management with batch & expiry tracking
+* 🔄 Stock restocking with supplier tracking
+* 📊 Sales reports & analytics
+* 👥 User management (Admin, Cashier roles)
+* 🔐 Secure authentication (hashed passwords)
+* 🧠 Audit logs for system tracking
+* ⚡ Offline-first (works without internet)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## 🖥️ Tech Stack
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+* **Frontend:** React (Vite + TypeScript)
+* **Desktop App:** Electron
+* **Database:** SQLite (better-sqlite3)
+* **Charts:** Recharts
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+---
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## 📦 Installation (Development)
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+git clone https://github.com/modinicholas18-wq/medtrack-pos.git
+cd medtrack-pos
+npm install
+npm run desktop
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+---
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## 🛠️ Build Desktop App
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dist
 ```
+
+### Outputs:
+
+* `.AppImage` (Linux portable app)
+* `.deb` (Linux installer)
+* `.exe` (Windows installer — build on Windows)
+
+---
+
+## 🔑 Default Login
+
+```text
+Username: admin
+Password: admin123
+```
+
+⚠️ Change this immediately after first login.
+
+---
+
+## 📁 Project Structure
+
+```
+medtrack-pos/
+├── electron/        # Electron main process
+├── src/             # React frontend
+├── database/        # SQLite database logic
+├── assets/          # Icons & assets
+├── dist/            # Build outputs
+```
+
+---
+
+## 🌐 Roadmap
+
+* ☁️ Cloud sync (online + offline support)
+* 🤖 AI-powered drug assistant
+* 📱 Mobile support
+* 🏪 Multi-branch pharmacy support
+
+---
+
+## 👨‍💻 Author
+
+**Nicholas Modi**
+📧 [modinicholas18@gmail.com](mailto:modinicholas18@gmail.com)
+
+---
+
+## 📄 License
+
+Currently not licensed.
