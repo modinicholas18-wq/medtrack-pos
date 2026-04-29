@@ -30,3 +30,6 @@ dist/
 pharmacy.db
 .env
 .DS_Store
+
+.codex
+*.csv

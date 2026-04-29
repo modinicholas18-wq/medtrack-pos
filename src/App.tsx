@@ -1,3 +1,4 @@
+import Papa from "papaparse";
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import {
@@ -120,7 +121,43 @@ function App() {
   const [editRequiresPrescription, setEditRequiresPrescription] = useState(false);
   const [editBuyingCost, setEditBuyingCost] = useState("");
 
+  const [rxPatientName, setRxPatientName] = useState("");
+  const [rxPatientPhone, setRxPatientPhone] = useState("");
+  const [rxAllergies, setRxAllergies] = useState("");
+  const [rxDrugSearch, setRxDrugSearch] = useState("");
+  const [rxPrescriptionItems, setRxPrescriptionItems] = useState<any[]>([]);
+  const [rxWarnings, setRxWarnings] = useState<any[]>([]);
+
+  const [rxPatientAge, setRxPatientAge] = useState("");
+  const [rxPatientSex, setRxPatientSex] = useState("");
+  const [rxPregnancyStatus, setRxPregnancyStatus] = useState("Not applicable");
+  const [rxDiagnosis, setRxDiagnosis] = useState("");
+  const [rxDoctorName, setRxDoctorName] = useState("");
+  const [rxMedicalConditions, setRxMedicalConditions] = useState("");
+  const [rxCurrentMedicines, setRxCurrentMedicines] = useState("");
+  const [rxPrescriptionNotes, setRxPrescriptionNotes] = useState("");
+
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+
+  const [purchaseInvoices, setPurchaseInvoices] = useState<any[]>([]);
+  const [invoiceSupplier, setInvoiceSupplier] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState("");
+  const [invoiceItems, setInvoiceItems] = useState<any[]>([
+    {
+      product_id: "",
+      product_name: "",
+      brand: "",
+      quantity: "",
+      bonus_quantity: "",
+      batch_number: "",
+      expiry_date: "",
+      pack_size: "",
+      unit_cost: "",
+      discount: "",
+      vat: "",
+    },
+  ]);
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -165,7 +202,11 @@ async function logAction(action: string, details: string) {
   });
 }
 
-  async function loadRestockHistory() {
+async function loadPurchaseInvoices() {
+  const data = await window.api.getPurchaseInvoices();
+  setPurchaseInvoices(data || []);
+}  
+async function loadRestockHistory() {
   const data = await window.api.getRestockHistory();
   setRestockHistory(data || []);
   }
@@ -252,6 +293,7 @@ async function logAction(action: string, details: string) {
   loadSalesHistory();
   loadReportsSummary();
   loadAuditLogs();
+  loadPurchaseInvoices();
   }, []);
 
   useEffect(() => {
@@ -389,7 +431,187 @@ async function logAction(action: string, details: string) {
 
   await loadSuppliers();
 }
-  async function handleRestock(event: React.FormEvent) {
+  
+function updateInvoiceItem(index: number, field: string, value: string) {
+  const updatedItems = [...invoiceItems];
+
+  updatedItems[index] = {
+    ...updatedItems[index],
+    [field]: value,
+  };
+
+  if (field === "product_id") {
+    const selectedProduct = products.find((p) => String(p.id) === value);
+
+    if (selectedProduct) {
+      updatedItems[index].product_name = selectedProduct.name;
+      updatedItems[index].brand = selectedProduct.brand;
+    }
+  }
+
+  setInvoiceItems(updatedItems);
+}
+
+function addInvoiceItemRow() {
+  setInvoiceItems([
+    ...invoiceItems,
+    {
+      product_id: "",
+      product_name: "",
+      brand: "",
+      quantity: "",
+      bonus_quantity: "",
+      batch_number: "",
+      expiry_date: "",
+      pack_size: "",
+      unit_cost: "",
+      discount: "",
+      vat: "",
+    },
+  ]);
+}
+
+function removeInvoiceItemRow(index: number) {
+  if (invoiceItems.length === 1) return;
+
+  setInvoiceItems(invoiceItems.filter((_, i) => i !== index));
+}
+
+function resetInvoiceItems() {
+  setInvoiceItems([
+    {
+      product_id: "",
+      product_name: "",
+      brand: "",
+      quantity: "",
+      bonus_quantity: "",
+      batch_number: "",
+      expiry_date: "",
+      pack_size: "",
+      unit_cost: "",
+      discount: "",
+      vat: "",
+    },
+  ]);
+}
+
+async function handleCreatePurchaseInvoice(event: React.FormEvent) {
+  event.preventDefault();
+
+  if (!invoiceSupplier || !invoiceNumber) {
+    alert("Supplier and invoice number are required");
+    return;
+  }
+
+  const cleanItems = invoiceItems
+    .filter((item) => item.product_name && Number(item.quantity || 0) > 0)
+    .map((item) => {
+      const quantity = Number(item.quantity || 0);
+      const unitCost = Number(item.unit_cost || 0);
+      const discount = Number(item.discount || 0);
+      const vat = Number(item.vat || 0);
+
+      return {
+        product_id: item.product_id ? Number(item.product_id) : undefined,
+        product_name: item.product_name,
+        brand: item.brand,
+        quantity,
+        bonus_quantity: Number(item.bonus_quantity || 0),
+        batch_number: item.batch_number,
+        expiry_date: item.expiry_date,
+        pack_size: item.pack_size,
+        unit_cost: unitCost,
+        discount,
+        vat,
+        line_total: quantity * unitCost - discount + vat,
+      };
+    });
+
+  if (cleanItems.length === 0) {
+    alert("Add at least one valid invoice item");
+    return;
+  }
+
+  const selectedSupplier = suppliers.find(
+    (supplier) => String(supplier.id) === invoiceSupplier
+  );
+
+  await window.api.createPurchaseInvoice({
+    supplier_id: selectedSupplier?.id,
+    supplier_name: selectedSupplier?.name || invoiceSupplier,
+    invoice_number: invoiceNumber,
+    invoice_date: invoiceDate,
+    items: cleanItems,
+  });
+
+  alert("Purchase invoice saved and stock updated ✅");
+
+  setInvoiceSupplier("");
+  setInvoiceNumber("");
+  setInvoiceDate("");
+  setInvoiceItems([
+    {
+      product_id: "",
+      product_name: "",
+      brand: "",
+      quantity: "",
+      bonus_quantity: "",
+      batch_number: "",
+      expiry_date: "",
+      pack_size: "",
+      unit_cost: "",
+      discount: "",
+      vat: "",
+    },
+  ]);
+
+  await loadProducts();
+  await loadPurchaseInvoices();
+  await loadReportsSummary(reportPeriod);
+}
+
+function handleInvoiceCsvImport(event: React.ChangeEvent<HTMLInputElement>) {
+  const file = event.target.files?.[0];
+
+  if (!file) return;
+
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: (result) => {
+      const rows = result.data as any[];
+
+      const importedItems = rows.map((row) => ({
+        product_id: "",
+        product_name:
+          row.product_name ||
+          row.Product ||
+          row.product ||
+          row["Product Description"] ||
+          "",
+        brand: row.brand || row.Brand || "",
+        quantity: row.quantity || row.Qty || row.QTY || "",
+        bonus_quantity: row.bonus_quantity || row.Bonus || row.BONUS || "",
+        batch_number: row.batch_number || row.Batch || row["Batch No"] || "",
+        expiry_date: row.expiry_date || row.Expiry || row["Expiry Date"] || "",
+        pack_size: row.pack_size || row.Pack || row["Pack Size"] || "",
+        unit_cost: row.unit_cost || row.Cost || row.Price || "",
+        discount: row.discount || row.Disc || row.Discount || "",
+        vat: row.vat || row.VAT || "",
+      }));
+
+      setInvoiceItems(importedItems);
+
+      alert(`Imported ${importedItems.length} invoice item(s) ✅`);
+    },
+    error: (error) => {
+      alert(error.message);
+    },
+  });
+
+  event.target.value = "";
+}
+async function handleRestock(event: React.FormEvent) {
   event.preventDefault();
 
   if (!restockProductId || !restockQuantity) {
@@ -923,7 +1145,375 @@ function exportDailySalesCSV() {
 
   downloadCSV(`daily-sales-${reportPeriod}.csv`, rows);
 }
-  function renderReports() {
+  
+function addDrugToPrescription(product: any) {
+  const exists = rxPrescriptionItems.find((item) => item.id === product.id);
+
+  if (exists) {
+    alert("This medicine is already in the prescription list");
+    return;
+  }
+
+  setRxPrescriptionItems([
+    ...rxPrescriptionItems,
+    {
+      ...product,
+      dose: "",
+      frequency: "",
+      duration: "",
+      instructions: "",
+    },
+  ]);
+}
+
+function updateRxItemField(id: number, field: string, value: string) {
+  setRxPrescriptionItems(
+    rxPrescriptionItems.map((item) =>
+      item.id === id ? { ...item, [field]: value } : item
+    )
+  );
+}
+
+function removeDrugFromPrescription(id: number) {
+  setRxPrescriptionItems(rxPrescriptionItems.filter((item) => item.id !== id));
+}
+
+function runPrescriptionCheck() {
+  const warnings: any[] = [];
+
+  for (const item of rxPrescriptionItems) {
+    if (item.requires_prescription) {
+      warnings.push({
+        type: "Prescription Required",
+        level: "warning",
+        message: `${item.name} requires a prescription before dispensing.`,
+      });
+    }
+
+    const allergyList = rxAllergies
+      .toLowerCase()
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean);
+
+    const medicineName = `${item.name} ${item.brand}`.toLowerCase();
+
+    const allergyMatch = allergyList.find((allergy) =>
+      medicineName.includes(allergy)
+    );
+
+    if (allergyMatch) {
+      warnings.push({
+        type: "Allergy Risk",
+        level: "danger",
+        message: `${item.name} may conflict with allergy: ${allergyMatch}.`,
+      });
+    }
+  }
+
+  const names = rxPrescriptionItems.map((item) =>
+    String(item.name).toLowerCase()
+  );
+
+  const duplicates = names.filter(
+    (name, index) => names.indexOf(name) !== index
+  );
+
+  for (const duplicate of [...new Set(duplicates)]) {
+    warnings.push({
+      type: "Duplicate Therapy",
+      level: "warning",
+      message: `Duplicate medicine detected: ${duplicate}.`,
+    });
+  }
+
+  setRxWarnings(warnings);
+
+  if (warnings.length === 0) {
+    alert("No basic safety issues found ✅");
+  }
+}
+
+function approvePrescriptionToCart() {
+  if (rxPrescriptionItems.length === 0) {
+    alert("Add at least one medicine first");
+    return;
+  }
+
+  const hasDangerWarning = rxWarnings.some(
+    (warning) => warning.level === "danger"
+  );
+
+  if (hasDangerWarning) {
+    const confirmed = confirm(
+      "This prescription has danger warnings. Approve anyway?"
+    );
+
+    if (!confirmed) return;
+  }
+
+  for (const item of rxPrescriptionItems) {
+    addToCart(item);
+  }
+
+  alert("Prescription medicines sent to POS cart ✅");
+
+  setRxPrescriptionItems([]);
+  setRxWarnings([]);
+  setRxDrugSearch("");
+
+  setActiveTab("pos");
+}
+function renderRX() {
+  const filteredRxProducts = products.filter((p) =>
+    `${p.name} ${p.brand}`.toLowerCase().includes(rxDrugSearch.toLowerCase())
+  );
+
+  return (
+    <section className="inventory-container">
+      <div className="panel">
+        <div className="panel-head">
+          <h2>Prescription Safety</h2>
+          <p>Check prescriptions before dispensing medicine.</p>
+        </div>
+
+        <div className="medicine-form">
+          <div className="form-row">
+            <input
+              placeholder="Patient name"
+              value={rxPatientName}
+              onChange={(e) => setRxPatientName(e.target.value)}
+            />
+
+            <input
+              placeholder="Patient phone"
+              value={rxPatientPhone}
+              onChange={(e) => setRxPatientPhone(e.target.value)}
+            />
+          </div>
+
+          <div className="form-row">
+            <input
+              type="number"
+              placeholder="Patient age"
+              value={rxPatientAge}
+              onChange={(e) => setRxPatientAge(e.target.value)}
+            />
+
+            <select
+              value={rxPatientSex}
+              onChange={(e) => setRxPatientSex(e.target.value)}
+            >
+              <option value="">Select sex</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
+
+          <div className="form-row">
+            <select
+              value={rxPregnancyStatus}
+              onChange={(e) => setRxPregnancyStatus(e.target.value)}
+            >
+              <option>Not applicable</option>
+              <option>Pregnant</option>
+              <option>Breastfeeding</option>
+              <option>Unknown</option>
+            </select>
+
+            <input
+              placeholder="Doctor / clinic name"
+              value={rxDoctorName}
+              onChange={(e) => setRxDoctorName(e.target.value)}
+            />
+          </div>
+
+          <input
+            placeholder="Diagnosis or symptoms e.g. malaria, cough, UTI"
+            value={rxDiagnosis}
+            onChange={(e) => setRxDiagnosis(e.target.value)}
+          />
+
+          <input
+            placeholder="Medical conditions e.g. asthma, ulcers, kidney disease"
+            value={rxMedicalConditions}
+            onChange={(e) => setRxMedicalConditions(e.target.value)}
+          />
+
+          <input
+            placeholder="Current medicines already being taken"
+            value={rxCurrentMedicines}
+            onChange={(e) => setRxCurrentMedicines(e.target.value)}
+          />
+
+          <textarea
+            placeholder="Prescription notes"
+            value={rxPrescriptionNotes}
+            onChange={(e) => setRxPrescriptionNotes(e.target.value)}
+          />
+
+          <input
+            placeholder="Known allergies e.g. penicillin, ibuprofen"
+            value={rxAllergies}
+            onChange={(e) => setRxAllergies(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <section className="lower-grid">
+        <div className="panel">
+          <div className="panel-head">
+            <h2>Add Medicine</h2>
+            <p>Select medicines from inventory.</p>
+          </div>
+
+          <input
+            className="pos-search"
+            placeholder="Search medicine..."
+            value={rxDrugSearch}
+            onChange={(e) => setRxDrugSearch(e.target.value)}
+          />
+
+          <div className="pos-products">
+            {filteredRxProducts.map((product) => (
+              <button
+                className="pos-product"
+                key={product.id}
+                onClick={() => addDrugToPrescription(product)}
+              >
+                <span>
+                  <strong>{product.name}</strong>
+                  <small>{product.brand}</small>
+                </span>
+
+                <span>
+                  <small>Stock</small>
+                  <b>{product.quantity} {product.unit}</b>
+                </span>
+
+                <span>
+                  <small>Prescription</small>
+                  <b>{product.requires_prescription ? "Required" : "No"}</b>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">
+            <h2>Prescription Items</h2>
+            <p>{rxPrescriptionItems.length} medicine(s) selected</p>
+          </div>
+
+          {rxPrescriptionItems.length === 0 ? (
+            <p>No medicines added yet.</p>
+          ) : (
+            rxPrescriptionItems.map((item) => (
+              <div className="panel" key={item.id}>
+                <div className="panel-head">
+                  <h3>{item.name}</h3>
+                  <p>{item.brand}</p>
+                </div>
+
+                <div className="medicine-form">
+                  <div className="form-row">
+                    <input
+                      placeholder="Dose e.g. 500mg"
+                      value={item.dose}
+                      onChange={(e) =>
+                        updateRxItemField(item.id, "dose", e.target.value)
+                      }
+                    />
+
+                    <input
+                      placeholder="Frequency e.g. 3 times daily"
+                      value={item.frequency}
+                      onChange={(e) =>
+                        updateRxItemField(item.id, "frequency", e.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div className="form-row">
+                    <input
+                      placeholder="Duration e.g. 5 days"
+                      value={item.duration}
+                      onChange={(e) =>
+                        updateRxItemField(item.id, "duration", e.target.value)
+                      }
+                    />
+
+                    <input
+                      placeholder="Instructions e.g. after meals"
+                      value={item.instructions}
+                      onChange={(e) =>
+                        updateRxItemField(
+                          item.id,
+                          "instructions",
+                          e.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <button onClick={() => removeDrugFromPrescription(item.id)}>
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+
+          <button
+            className="checkout-btn"
+            disabled={rxPrescriptionItems.length === 0}
+            onClick={runPrescriptionCheck}
+          >
+            Run Safety Check
+          </button>
+
+          <button
+            className="checkout-btn"
+            disabled={rxPrescriptionItems.length === 0}
+            onClick={approvePrescriptionToCart}
+          >
+            Approve & Send to POS
+          </button>
+        </div>
+      </section>
+
+      <div className="panel">
+        <div className="panel-head">
+          <h2>Safety Results</h2>
+          <p>Basic rule-based warnings before AI integration.</p>
+        </div>
+
+        {rxWarnings.length === 0 ? (
+          <p>No warnings yet. Run a safety check.</p>
+        ) : (
+          rxWarnings.map((warning, index) => (
+            <div
+              className={
+                warning.level === "danger"
+                  ? "alert-item alert-danger"
+                  : "alert-item alert-warning"
+              }
+              key={index}
+            >
+              <span>{warning.level === "danger" ? "🚨" : "⚠️"}</span>
+              <div>
+                <strong>{warning.type}</strong>
+                <p>{warning.message}</p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+function renderReports() {
     const periodLabelMap: any = {
       today: "Today",
       week: "This Week",
@@ -1327,6 +1917,14 @@ function exportDailySalesCSV() {
   }
 
   function renderInventory() {
+
+    const invoiceTotal = invoiceItems.reduce((sum, item) => {
+    const q = Number(item.quantity || 0);
+    const c = Number(item.unit_cost || 0);
+    const d = Number(item.discount || 0);
+    const v = Number(item.vat || 0);
+    return sum + (q * c - d + v);
+  }, 0);
     const filteredProducts = products.filter((p) =>
       `${p.name} ${p.brand}`.toLowerCase().includes(search.toLowerCase())
     );
@@ -1604,6 +2202,245 @@ function exportDailySalesCSV() {
             </div>
           </div>
         </section>
+
+        <section className="panel invoice-panel">
+  <div className="panel-head">
+    <h2>Receive Stock by Supplier Invoice</h2>
+    <p>Enter multiple medicines from one supplier invoice</p>
+  </div>
+
+  <form className="medicine-form" onSubmit={handleCreatePurchaseInvoice}>
+    <div className="form-row">
+      <select
+        value={invoiceSupplier}
+        onChange={(e) => setInvoiceSupplier(e.target.value)}
+      >
+        <option value="">Select supplier</option>
+        {suppliers.map((supplier) => (
+          <option key={supplier.id} value={supplier.id}>
+            {supplier.name}
+          </option>
+        ))}
+      </select>
+
+      <input
+        placeholder="Invoice number"
+        value={invoiceNumber}
+        onChange={(e) => setInvoiceNumber(e.target.value)}
+      />
+
+      <input
+        type="date"
+        value={invoiceDate}
+        onChange={(e) => setInvoiceDate(e.target.value)}
+      />
+    </div>
+
+    <div className="csv-import-box">
+  <label>
+    Import Invoice CSV
+    <input
+      type="file"
+      accept=".csv"
+      onChange={handleInvoiceCsvImport}
+    />
+  </label>
+
+  <small>
+    CSV columns: product_name, brand, quantity, bonus_quantity, batch_number,
+    expiry_date, pack_size, unit_cost, discount, vat
+  </small>
+</div>
+
+    <div className="invoice-items">
+      <div className="invoice-item-header">
+        <span>Product</span>
+        <span>Qty</span>
+        <span>Bonus</span>
+        <span>Batch</span>
+        <span>Expiry</span>
+        <span>Pack</span>
+        <span>Cost</span>
+        <span>Disc</span>
+        <span>VAT</span>
+        <span>Action</span>
+      </div>
+
+      {invoiceItems.map((item, index) => (
+        <div className="invoice-item-row" key={index}>
+          <select
+            value={item.product_id}
+            onChange={(e) =>
+              updateInvoiceItem(index, "product_id", e.target.value)
+            }
+          >
+            <option value="">New / select product</option>
+            {products.map((product) => (
+              <option key={product.id} value={product.id}>
+                {product.name} — {product.brand}
+              </option>
+            ))}
+          </select>
+
+          {!item.product_id && (
+            <input
+              placeholder="New product name"
+              value={item.product_name}
+              onChange={(e) =>
+                updateInvoiceItem(index, "product_name", e.target.value)
+              }
+            />
+          )}
+
+          <input
+            type="number"
+            placeholder="Qty"
+            value={item.quantity}
+            onChange={(e) =>
+              updateInvoiceItem(index, "quantity", e.target.value)
+            }
+          />
+
+          <input
+            type="number"
+            placeholder="Bonus"
+            value={item.bonus_quantity}
+            onChange={(e) =>
+              updateInvoiceItem(index, "bonus_quantity", e.target.value)
+            }
+          />
+
+          <input
+            placeholder="Batch"
+            value={item.batch_number}
+            onChange={(e) =>
+              updateInvoiceItem(index, "batch_number", e.target.value)
+            }
+          />
+
+          <input
+            type="date"
+            value={item.expiry_date}
+            onChange={(e) =>
+              updateInvoiceItem(index, "expiry_date", e.target.value)
+            }
+          />
+
+          <input
+            placeholder="Pack"
+            value={item.pack_size}
+            onChange={(e) =>
+              updateInvoiceItem(index, "pack_size", e.target.value)
+            }
+          />
+
+          <input
+            type="number"
+            placeholder="Cost"
+            value={item.unit_cost}
+            onChange={(e) =>
+              updateInvoiceItem(index, "unit_cost", e.target.value)
+            }
+          />
+
+          <input
+            type="number"
+            placeholder="Disc"
+            value={item.discount}
+            onChange={(e) =>
+              updateInvoiceItem(index, "discount", e.target.value)
+            }
+          />
+
+          <input
+            type="number"
+            placeholder="VAT"
+            value={item.vat}
+            onChange={(e) =>
+              updateInvoiceItem(index, "vat", e.target.value)
+            }
+          />
+
+          <button
+            type="button"
+            className="danger-btn"
+            onClick={() => removeInvoiceItemRow(index)}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+    </div>
+
+    <button
+  type="button"
+  onClick={() => setInvoiceItems([{
+    product_id: "",
+    product_name: "",
+    brand: "",
+    quantity: "",
+    bonus_quantity: "",
+    batch_number: "",
+    expiry_date: "",
+    pack_size: "",
+    unit_cost: "",
+    discount: "",
+    vat: "",
+  }])}
+>
+  Clear All
+</button>
+
+    <div className="form-actions">
+      <button type="button" onClick={addInvoiceItemRow}>
+        + Add Item
+      </button>
+
+      
+      <div className="invoice-summary-bar">
+        <div>
+          <small>Invoice Total</small>
+          <strong>KSh {invoiceTotal.toLocaleString()}</strong>
+        </div>
+
+        <button type="button" onClick={resetInvoiceItems}>
+          Clear Items
+        </button>
+      </div>
+
+      <button type="submit">Save Invoice & Update Stock</button>
+    </div>
+  </form>
+</section>
+
+  <section className="panel">
+    <div className="panel-head">
+      <h2>Recent Purchase Invoices</h2>
+      <p>Latest supplier invoices received</p>
+    </div>
+
+    <div className="inventory-table invoice-history-table">
+      <div className="table-header">
+        <span>Supplier</span>
+        <span>Invoice</span>
+        <span>Date</span>
+        <span>Total</span>
+      </div>
+
+      {purchaseInvoices.length === 0 ? (
+        <p style={{ padding: "16px" }}>No purchase invoices yet</p>
+      ) : (
+        purchaseInvoices.map((invoice) => (
+          <div className="table-row" key={invoice.id}>
+            <span>{invoice.supplier_name}</span>
+            <span>{invoice.invoice_number}</span>
+            <span>{invoice.invoice_date}</span>
+            <span>KSh {Number(invoice.grand_total || 0).toLocaleString()}</span>
+          </div>
+        ))
+      )}
+    </div>
+  </section>
 
         <div className="inventory-table">
           <div className="table-header">
@@ -2076,7 +2913,8 @@ function exportDailySalesCSV() {
     ) {
       return renderPlaceholder("Access Denied");
     }
-
+    
+    if (activeTab === "rx") return renderRX();
     if (activeTab === "reports") return renderReports();
     if (activeTab === "suppliers") return renderSuppliers();
     if (activeTab === "settings") return renderSettings();
@@ -2112,9 +2950,11 @@ function exportDailySalesCSV() {
 
       <nav className="dock">
         {[
+          
           ["dashboard", "🏠", "Dashboard"],
           ["pos", "🧾", "POS"],
           ["inventory", "📦", "Inventory"],
+          ["rx", "📋", "Prescription"],
           ...(currentUser.role === "admin" || currentUser.role === "manager"
             ? [
                 ["suppliers", "🚚", "Suppliers"],

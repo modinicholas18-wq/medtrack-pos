@@ -22,6 +22,43 @@ db.prepare(`
 `).run();
 
 db.prepare(`
+  CREATE TABLE IF NOT EXISTS prescriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_name TEXT NOT NULL,
+    patient_phone TEXT,
+    patient_age TEXT,
+    patient_sex TEXT,
+    patient_weight TEXT,
+    allergies TEXT,
+    allergy_reaction TEXT,
+    pregnancy_status TEXT,
+    diagnosis TEXT,
+    doctor_name TEXT,
+    medical_conditions TEXT,
+    current_medicines TEXT,
+    prescription_notes TEXT,
+    safety_warnings TEXT,
+    created_at TEXT NOT NULL
+  )
+`).run();
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS prescription_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prescription_id INTEGER NOT NULL,
+    product_id INTEGER,
+    product_name TEXT NOT NULL,
+    brand TEXT,
+    dose TEXT,
+    frequency TEXT,
+    duration TEXT,
+    instructions TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(prescription_id) REFERENCES prescriptions(id)
+  )
+`).run();
+
+db.prepare(`
   CREATE TABLE IF NOT EXISTS sales (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     total REAL NOT NULL,
@@ -65,6 +102,42 @@ db.prepare(`
     phone TEXT,
     location TEXT,
     created_at TEXT NOT NULL
+  )
+`).run();
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS purchase_invoices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    supplier_id INTEGER,
+    supplier_name TEXT,
+    invoice_number TEXT,
+    invoice_date TEXT,
+    subtotal REAL DEFAULT 0,
+    discount_total REAL DEFAULT 0,
+    vat_total REAL DEFAULT 0,
+    grand_total REAL DEFAULT 0,
+    created_at TEXT NOT NULL
+  )
+`).run();
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS purchase_invoice_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL,
+    product_id INTEGER,
+    product_name TEXT NOT NULL,
+    brand TEXT,
+    quantity INTEGER DEFAULT 0,
+    bonus_quantity INTEGER DEFAULT 0,
+    batch_number TEXT,
+    expiry_date TEXT,
+    pack_size TEXT,
+    unit_cost REAL DEFAULT 0,
+    discount REAL DEFAULT 0,
+    vat REAL DEFAULT 0,
+    line_total REAL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(invoice_id) REFERENCES purchase_invoices(id)
   )
 `).run();
 
@@ -253,6 +326,110 @@ export function completeSale(cart: any[]) {
     }
 
     return saleId;
+  });
+
+  return transaction();
+}
+
+export function savePrescription(data: {
+  patient_name: string;
+  patient_phone: string;
+  patient_age: string;
+  patient_sex: string;
+  patient_weight: string;
+  allergies: string;
+  allergy_reaction: string;
+  pregnancy_status: string;
+  diagnosis: string;
+  doctor_name: string;
+  medical_conditions: string;
+  current_medicines: string;
+  prescription_notes: string;
+  safety_warnings: any[];
+  items: any[];
+}) {
+  if (!data.patient_name) {
+    throw new Error("Patient name is required");
+  }
+
+  if (!data.items || data.items.length === 0) {
+    throw new Error("Add at least one medicine");
+  }
+
+  const now = new Date().toISOString();
+
+  const transaction = db.transaction(() => {
+    const result = db
+      .prepare(`
+        INSERT INTO prescriptions
+        (
+          patient_name,
+          patient_phone,
+          patient_age,
+          patient_sex,
+          patient_weight,
+          allergies,
+          allergy_reaction,
+          pregnancy_status,
+          diagnosis,
+          doctor_name,
+          medical_conditions,
+          current_medicines,
+          prescription_notes,
+          safety_warnings,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        data.patient_name,
+        data.patient_phone || "",
+        data.patient_age || "",
+        data.patient_sex || "",
+        data.patient_weight || "",
+        data.allergies || "",
+        data.allergy_reaction || "",
+        data.pregnancy_status || "",
+        data.diagnosis || "",
+        data.doctor_name || "",
+        data.medical_conditions || "",
+        data.current_medicines || "",
+        data.prescription_notes || "",
+        JSON.stringify(data.safety_warnings || []),
+        now
+      );
+
+    const prescriptionId = Number(result.lastInsertRowid);
+
+    for (const item of data.items) {
+      db.prepare(`
+        INSERT INTO prescription_items
+        (
+          prescription_id,
+          product_id,
+          product_name,
+          brand,
+          dose,
+          frequency,
+          duration,
+          instructions,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        prescriptionId,
+        item.id || null,
+        item.name || "",
+        item.brand || "",
+        item.dose || "",
+        item.frequency || "",
+        item.duration || "",
+        item.instructions || "",
+        now
+      );
+    }
+
+    return prescriptionId;
   });
 
   return transaction();
@@ -754,6 +931,200 @@ export function changePassword(data: {
   `).run(hashedPassword, data.user_id);
 
   return true;
+}
+
+export function createPurchaseInvoice(invoice: {
+  supplier_id?: number;
+  supplier_name: string;
+  invoice_number: string;
+  invoice_date: string;
+  items: Array<{
+    product_id?: number;
+    product_name: string;
+    brand?: string;
+    quantity: number;
+    bonus_quantity?: number;
+    batch_number?: string;
+    expiry_date?: string;
+    pack_size?: string;
+    unit_cost: number;
+    discount?: number;
+    vat?: number;
+    line_total?: number;
+  }>;
+}) {
+  if (!invoice.supplier_name || !invoice.invoice_number) {
+    throw new Error("Supplier and invoice number are required");
+  }
+
+  if (!invoice.items || invoice.items.length === 0) {
+    throw new Error("Invoice must have at least one item");
+  }
+
+  const now = new Date().toISOString();
+
+  const subtotal = invoice.items.reduce(
+    (sum, item) => sum + Number(item.unit_cost || 0) * Number(item.quantity || 0),
+    0
+  );
+
+  const discountTotal = invoice.items.reduce(
+    (sum, item) => sum + Number(item.discount || 0),
+    0
+  );
+
+  const vatTotal = invoice.items.reduce(
+    (sum, item) => sum + Number(item.vat || 0),
+    0
+  );
+
+  const grandTotal = invoice.items.reduce((sum, item) => {
+    const line =
+      item.line_total ??
+      Number(item.unit_cost || 0) * Number(item.quantity || 0) -
+        Number(item.discount || 0) +
+        Number(item.vat || 0);
+
+    return sum + Number(line || 0);
+  }, 0);
+
+  const transaction = db.transaction(() => {
+    const invoiceResult = db
+      .prepare(`
+        INSERT INTO purchase_invoices
+        (supplier_id, supplier_name, invoice_number, invoice_date, subtotal, discount_total, vat_total, grand_total, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        invoice.supplier_id || null,
+        invoice.supplier_name,
+        invoice.invoice_number,
+        invoice.invoice_date || now.slice(0, 10),
+        subtotal,
+        discountTotal,
+        vatTotal,
+        grandTotal,
+        now
+      );
+
+    const invoiceId = Number(invoiceResult.lastInsertRowid);
+
+    for (const item of invoice.items) {
+      const totalQuantity =
+        Number(item.quantity || 0) + Number(item.bonus_quantity || 0);
+
+      const lineTotal =
+        item.line_total ??
+        Number(item.unit_cost || 0) * Number(item.quantity || 0) -
+          Number(item.discount || 0) +
+          Number(item.vat || 0);
+
+      db.prepare(`
+        INSERT INTO purchase_invoice_items
+        (invoice_id, product_id, product_name, brand, quantity, bonus_quantity, batch_number, expiry_date, pack_size, unit_cost, discount, vat, line_total, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        invoiceId,
+        item.product_id || null,
+        item.product_name,
+        item.brand || "",
+        Number(item.quantity || 0),
+        Number(item.bonus_quantity || 0),
+        item.batch_number || "",
+        item.expiry_date || "",
+        item.pack_size || "",
+        Number(item.unit_cost || 0),
+        Number(item.discount || 0),
+        Number(item.vat || 0),
+        Number(lineTotal || 0),
+        now
+      );
+
+      let productId = item.product_id || null;
+
+if (!productId) {
+  const existingProduct = db
+    .prepare(`
+      SELECT id
+      FROM products
+      WHERE LOWER(name) = LOWER(?)
+        AND LOWER(brand) = LOWER(?)
+      LIMIT 1
+    `)
+    .get(item.product_name, item.brand || "") as any;
+
+  if (existingProduct) {
+    productId = existingProduct.id;
+  }
+}
+
+if (productId) {
+  db.prepare(`
+    UPDATE products
+    SET
+      quantity = quantity + ?,
+      batch_number = ?,
+      expiry_date = ?,
+      buying_cost = ?
+    WHERE id = ?
+  `).run(
+    totalQuantity,
+    item.batch_number || "",
+    item.expiry_date || "",
+    Number(item.unit_cost || 0),
+    productId
+  );
+} else {
+  db.prepare(`
+    INSERT INTO products
+    (name, brand, price, quantity, unit, batch_number, expiry_date, barcode, requires_prescription, buying_cost)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    item.product_name,
+    item.brand || "",
+    0,
+    totalQuantity,
+    "Tablet",
+    item.batch_number || "",
+    item.expiry_date || "",
+    "",
+    0,
+    Number(item.unit_cost || 0)
+  );
+}
+    }
+
+    return invoiceId;
+  });
+
+  const invoiceId = transaction();
+
+  return {
+    success: true,
+    invoiceId,
+  };
+}
+
+export function getPurchaseInvoices() {
+  return db
+    .prepare(`
+      SELECT *
+      FROM purchase_invoices
+      ORDER BY created_at DESC
+      LIMIT 100
+    `)
+    .all();
+}
+
+export function getPurchaseInvoiceItems(invoiceId: number) {
+  return db
+    .prepare(`
+      SELECT *
+      FROM purchase_invoice_items
+      WHERE invoice_id = ?
+      ORDER BY id ASC
+    `)
+    .all(invoiceId);
 }
 
 export default db;

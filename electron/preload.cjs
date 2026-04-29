@@ -24,4 +24,15 @@ contextBridge.exposeInMainWorld("api", {
   addAuditLog: (log) => ipcRenderer.invoke("audit:add", log),
   getAuditLogs: () => ipcRenderer.invoke("audit:getAll"),
   changePassword: (data) => ipcRenderer.invoke("auth:changePassword", data),
+  createPurchaseInvoice: (invoice) =>
+  ipcRenderer.invoke("purchaseInvoices:create", invoice),
+
+  getPurchaseInvoices: () =>
+    ipcRenderer.invoke("purchaseInvoices:getAll"),
+
+  getPurchaseInvoiceItems: (invoiceId) =>
+    ipcRenderer.invoke("purchaseInvoices:getItems", invoiceId),
+
+  savePrescription: (data) =>
+  ipcRenderer.invoke("prescriptions:save", data),
 });

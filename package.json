@@ -1,4 +1,3 @@
-
 {
   "name": "medtrack-pos",
   "description": "Offline-first pharmacy POS system for inventory, sales, and reporting",
@@ -7,33 +6,32 @@
     "email": "modinicholas18@gmail.com"
   },
   "homepage": "https://medtrackpos.app",
-
   "productName": "MedTrack POS",
   "version": "1.0.0",
   "private": true,
   "main": "electron/main.ts",
   "type": "module",
-    "scripts": {
+  "scripts": {
     "dev": "vite",
     "electron": "electron --disable-gpu --disable-software-rasterizer --ozone-platform=x11 -r ts-node/register electron/main.ts",
     "desktop": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && npm run electron\"",
     "build": "tsc -b && vite build",
     "dist": "npm run build && electron-builder"
   },
-
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.9.0",
+    "papaparse": "^5.5.3",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "recharts": "^3.8.1"
   },
-
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/bcryptjs": "^3.0.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.12.2",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
@@ -51,24 +49,26 @@
     "vite": "^8.0.10",
     "wait-on": "^9.0.5"
   },
-
   "build": {
-  "appId": "com.medtrack.pos",
-  "productName": "MedTrack POS",
-  "files": [
-    "dist/**/*",
-    "electron/**/*",
-    "database/**/*",
-    "package.json"
-  ],
-  "icon": "assets/icon.png",
-  "linux": {
-    "target": ["AppImage", "deb"],
-    "category": "Office",
-    "maintainer": "Nicholas Modi <modinicholas18@gmail.com>"
-  },
-  "win": {
-    "target": "nsis"
+    "appId": "com.medtrack.pos",
+    "productName": "MedTrack POS",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "database/**/*",
+      "package.json"
+    ],
+    "icon": "assets/icon.png",
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "maintainer": "Nicholas Modi <modinicholas18@gmail.com>"
+    },
+    "win": {
+      "target": "nsis"
+    }
   }
- }
 }

@@ -21,6 +21,10 @@ import db, {
   addAuditLog,
   getAuditLogs,
   changePassword,
+  createPurchaseInvoice,
+  getPurchaseInvoices,
+  getPurchaseInvoiceItems,
+  savePrescription,
 } from "../database/db.ts";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -59,12 +63,28 @@ ipcMain.handle("settings:get", () => {
   return getSettings();
 });
 
+ipcMain.handle("prescriptions:save", (_event, data) => {
+  return savePrescription(data);
+});
+
 ipcMain.handle("audit:add", (_event, log) => {
   return addAuditLog(log);
 });
 
 ipcMain.handle("audit:getAll", () => {
   return getAuditLogs();
+});
+
+ipcMain.handle("purchaseInvoices:create", (_event, invoice) => {
+  return createPurchaseInvoice(invoice);
+});
+
+ipcMain.handle("purchaseInvoices:getAll", () => {
+  return getPurchaseInvoices();
+});
+
+ipcMain.handle("purchaseInvoices:getItems", (_event, invoiceId) => {
+  return getPurchaseInvoiceItems(invoiceId);
 });
 
 ipcMain.handle("products:update", (_event, product) => {
