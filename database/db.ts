@@ -133,6 +133,7 @@ db.prepare(`
     expiry_date TEXT,
     pack_size TEXT,
     unit_cost REAL DEFAULT 0,
+    selling_price REAL DEFAULT 0,
     discount REAL DEFAULT 0,
     vat REAL DEFAULT 0,
     line_total REAL DEFAULT 0,
@@ -192,6 +193,23 @@ function addSaleItemColumnIfMissing(
   }
 }
 
+function addPurchaseInvoiceItemColumnIfMissing(
+  columnName: string,
+  columnDefinition: string
+) {
+  const columns = db
+    .prepare("PRAGMA table_info(purchase_invoice_items)")
+    .all() as any[];
+
+  const exists = columns.some((column) => column.name === columnName);
+
+  if (!exists) {
+    db.prepare(
+      `ALTER TABLE purchase_invoice_items ADD COLUMN ${columnDefinition}`
+    ).run();
+  }
+}
+
 addColumnIfMissing("quantity", "quantity INTEGER DEFAULT 0");
 addColumnIfMissing("unit", "unit TEXT DEFAULT 'Tablet'");
 addColumnIfMissing("batch_number", "batch_number TEXT");
@@ -205,6 +223,11 @@ addColumnIfMissing("buying_cost", "buying_cost REAL DEFAULT 0");
 
 addSaleItemColumnIfMissing("buying_cost", "buying_cost REAL DEFAULT 0");
 addSaleItemColumnIfMissing("profit", "profit REAL DEFAULT 0");
+
+addPurchaseInvoiceItemColumnIfMissing(
+  "selling_price",
+  "selling_price REAL DEFAULT 0"
+);
 
 const countResult = db
   .prepare("SELECT COUNT(*) as count FROM products")
@@ -249,19 +272,19 @@ if (userCount.count === 0) {
   );
 }
 
-  const defaultSettings = [
-    ["pharmacy_name", "Main Pharmacy"],
-    ["branch_name", "Main Branch"],
-    ["receipt_footer", "Thank you for shopping with us."],
-    ["low_stock_threshold", "10"],
-  ];
+const defaultSettings = [
+  ["pharmacy_name", "Main Pharmacy"],
+  ["branch_name", "Main Branch"],
+  ["receipt_footer", "Thank you for shopping with us."],
+  ["low_stock_threshold", "10"],
+];
 
-  for (const [key, value] of defaultSettings) {
-    db.prepare(`
-      INSERT OR IGNORE INTO app_settings (key, value)
-      VALUES (?, ?)
-    `).run(key, value);
-  }
+for (const [key, value] of defaultSettings) {
+  db.prepare(`
+    INSERT OR IGNORE INTO app_settings (key, value)
+    VALUES (?, ?)
+  `).run(key, value);
+}
 
 export function reduceStock(id: number, qty: number) {
   const product = db
@@ -496,9 +519,6 @@ export function getReportsSummary(period: string = "today") {
     startDate = firstDay.toISOString().slice(0, 10);
   }
 
-  console.log("REPORT PERIOD:", period);
-  console.log("DATE RANGE:", startDate, "→", endDate);
-
   const todaySummary = db
     .prepare(`
       SELECT 
@@ -517,51 +537,51 @@ export function getReportsSummary(period: string = "today") {
     .get(startDate, endDate, startDate, endDate);
 
   const topProducts = db
-  .prepare(`
-    SELECT 
-      si.product_id,
-      si.product_name,
-      si.product_brand,
-      SUM(si.quantity) as total_quantity,
-      SUM(si.line_total) as total_revenue,
-      SUM(si.profit) as total_profit,
-      CASE 
-        WHEN SUM(si.line_total) > 0 
-        THEN ROUND((SUM(si.profit) / SUM(si.line_total)) * 100, 2)
-        ELSE 0 
-      END as profit_margin
-    FROM sale_items si
-    JOIN sales s ON s.id = si.sale_id
-    WHERE DATE(s.created_at) BETWEEN DATE(?) AND DATE(?)
-    GROUP BY si.product_id, si.product_name, si.product_brand
-    ORDER BY total_profit DESC
-    LIMIT 10
-  `)
-  .all(startDate, endDate);
+    .prepare(`
+      SELECT 
+        si.product_id,
+        si.product_name,
+        si.product_brand,
+        SUM(si.quantity) as total_quantity,
+        SUM(si.line_total) as total_revenue,
+        SUM(si.profit) as total_profit,
+        CASE 
+          WHEN SUM(si.line_total) > 0 
+          THEN ROUND((SUM(si.profit) / SUM(si.line_total)) * 100, 2)
+          ELSE 0 
+        END as profit_margin
+      FROM sale_items si
+      JOIN sales s ON s.id = si.sale_id
+      WHERE DATE(s.created_at) BETWEEN DATE(?) AND DATE(?)
+      GROUP BY si.product_id, si.product_name, si.product_brand
+      ORDER BY total_profit DESC
+      LIMIT 10
+    `)
+    .all(startDate, endDate);
 
   const lowProfitProducts = db
-  .prepare(`
-    SELECT 
-      si.product_id,
-      si.product_name,
-      si.product_brand,
-      SUM(si.quantity) as total_quantity,
-      SUM(si.line_total) as total_revenue,
-      SUM(si.profit) as total_profit,
-      CASE 
-        WHEN SUM(si.line_total) > 0 
-        THEN ROUND((SUM(si.profit) / SUM(si.line_total)) * 100, 2)
-        ELSE 0 
-      END as profit_margin
-    FROM sale_items si
-    JOIN sales s ON s.id = si.sale_id
-    WHERE DATE(s.created_at) BETWEEN DATE(?) AND DATE(?)
-    GROUP BY si.product_id, si.product_name, si.product_brand
-    HAVING profit_margin < 20
-    ORDER BY profit_margin ASC
-    LIMIT 10
-  `)
-  .all(startDate, endDate);
+    .prepare(`
+      SELECT 
+        si.product_id,
+        si.product_name,
+        si.product_brand,
+        SUM(si.quantity) as total_quantity,
+        SUM(si.line_total) as total_revenue,
+        SUM(si.profit) as total_profit,
+        CASE 
+          WHEN SUM(si.line_total) > 0 
+          THEN ROUND((SUM(si.profit) / SUM(si.line_total)) * 100, 2)
+          ELSE 0 
+        END as profit_margin
+      FROM sale_items si
+      JOIN sales s ON s.id = si.sale_id
+      WHERE DATE(s.created_at) BETWEEN DATE(?) AND DATE(?)
+      GROUP BY si.product_id, si.product_name, si.product_brand
+      HAVING profit_margin < 20
+      ORDER BY profit_margin ASC
+      LIMIT 10
+    `)
+    .all(startDate, endDate);
 
   const dailySales = db
     .prepare(`
@@ -579,13 +599,13 @@ export function getReportsSummary(period: string = "today") {
     .all(startDate, endDate);
 
   return {
-  period,
-  startDate,
-  endDate,
-  todaySummary,
-  topProducts,
-  lowProfitProducts,
-  dailySales,
+    period,
+    startDate,
+    endDate,
+    todaySummary,
+    topProducts,
+    lowProfitProducts,
+    dailySales,
   };
 }
 
@@ -948,6 +968,7 @@ export function createPurchaseInvoice(invoice: {
     expiry_date?: string;
     pack_size?: string;
     unit_cost: number;
+    selling_price?: number;
     discount?: number;
     vat?: number;
     line_total?: number;
@@ -1013,6 +1034,8 @@ export function createPurchaseInvoice(invoice: {
       const totalQuantity =
         Number(item.quantity || 0) + Number(item.bonus_quantity || 0);
 
+      const sellingPrice = Number(item.selling_price || 0);
+
       const lineTotal =
         item.line_total ??
         Number(item.unit_cost || 0) * Number(item.quantity || 0) -
@@ -1021,8 +1044,24 @@ export function createPurchaseInvoice(invoice: {
 
       db.prepare(`
         INSERT INTO purchase_invoice_items
-        (invoice_id, product_id, product_name, brand, quantity, bonus_quantity, batch_number, expiry_date, pack_size, unit_cost, discount, vat, line_total, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (
+          invoice_id,
+          product_id,
+          product_name,
+          brand,
+          quantity,
+          bonus_quantity,
+          batch_number,
+          expiry_date,
+          pack_size,
+          unit_cost,
+          selling_price,
+          discount,
+          vat,
+          line_total,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         invoiceId,
         item.product_id || null,
@@ -1034,6 +1073,7 @@ export function createPurchaseInvoice(invoice: {
         item.expiry_date || "",
         item.pack_size || "",
         Number(item.unit_cost || 0),
+        sellingPrice,
         Number(item.discount || 0),
         Number(item.vat || 0),
         Number(lineTotal || 0),
@@ -1042,56 +1082,75 @@ export function createPurchaseInvoice(invoice: {
 
       let productId = item.product_id || null;
 
-if (!productId) {
-  const existingProduct = db
-    .prepare(`
-      SELECT id
-      FROM products
-      WHERE LOWER(name) = LOWER(?)
-        AND LOWER(brand) = LOWER(?)
-      LIMIT 1
-    `)
-    .get(item.product_name, item.brand || "") as any;
+      if (!productId) {
+        let existingProduct: any = null;
 
-  if (existingProduct) {
-    productId = existingProduct.id;
-  }
-}
+        if (item.brand && item.brand.trim()) {
+          existingProduct = db
+            .prepare(`
+              SELECT id
+              FROM products
+              WHERE LOWER(name) = LOWER(?)
+                AND LOWER(brand) = LOWER(?)
+              LIMIT 1
+            `)
+            .get(item.product_name, item.brand || "") as any;
+        } else {
+          existingProduct = db
+            .prepare(`
+              SELECT id
+              FROM products
+              WHERE LOWER(name) = LOWER(?)
+              LIMIT 1
+            `)
+            .get(item.product_name) as any;
+        }
 
-if (productId) {
-  db.prepare(`
-    UPDATE products
-    SET
-      quantity = quantity + ?,
-      batch_number = ?,
-      expiry_date = ?,
-      buying_cost = ?
-    WHERE id = ?
-  `).run(
-    totalQuantity,
-    item.batch_number || "",
-    item.expiry_date || "",
-    Number(item.unit_cost || 0),
-    productId
-  );
-} else {
-  db.prepare(`
-    INSERT INTO products
-    (name, brand, price, quantity, unit, batch_number, expiry_date, barcode, requires_prescription, buying_cost)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    item.product_name,
-    item.brand || "",
-    0,
-    totalQuantity,
-    "Tablet",
-    item.batch_number || "",
-    item.expiry_date || "",
-    "",
-    0,
-    Number(item.unit_cost || 0)
-  );
-}
+        if (existingProduct) {
+          productId = existingProduct.id;
+        }
+      }
+
+      if (productId) {
+        db.prepare(`
+          UPDATE products
+          SET
+            quantity = quantity + ?,
+            batch_number = ?,
+            expiry_date = ?,
+            buying_cost = ?,
+            price = CASE
+              WHEN ? > 0 THEN ?
+              ELSE price
+            END
+          WHERE id = ?
+        `).run(
+          totalQuantity,
+          item.batch_number || "",
+          item.expiry_date || "",
+          Number(item.unit_cost || 0),
+          sellingPrice,
+          sellingPrice,
+          productId
+        );
+      } else {
+        db.prepare(`
+          INSERT INTO products
+          (name, brand, price, quantity, unit, batch_number, expiry_date, barcode, requires_prescription, buying_cost)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          item.product_name,
+          item.brand || "",
+          sellingPrice,
+          totalQuantity,
+          "Tablet",
+          item.batch_number || "",
+          item.expiry_date || "",
+          "",
+          0,
+          Number(item.unit_cost || 0)
+        );
+      }
     }
 
     return invoiceId;

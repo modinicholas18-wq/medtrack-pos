@@ -1639,3 +1639,247 @@ body,
   font-size: 13px;
   font-weight: 700;
 }
+/* Cleaner inventory page */
+.inventory-container {
+  padding-bottom: 120px;
+}
+
+/* Make supplier invoice action area cleaner */
+.invoice-actions {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: 180px 1fr 260px;
+  gap: 14px;
+  align-items: center;
+}
+
+.invoice-actions > button {
+  height: 46px;
+  width: auto;
+  border: none;
+  border-radius: 14px;
+  padding: 0 18px;
+  background: #2563eb;
+  color: white;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.invoice-actions > button:first-child {
+  background: #0f766e;
+}
+
+.invoice-actions > button:last-child {
+  background: #2563eb;
+}
+
+.invoice-summary-bar {
+  margin-top: 0;
+  padding: 10px 14px;
+  min-height: 46px;
+}
+
+.invoice-summary-bar strong {
+  font-size: 20px;
+}
+
+.invoice-summary-bar button {
+  height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+/* Make the main inventory stock table clearer */
+.inventory-table {
+  margin-top: 4px;
+}
+
+.inventory-table .table-row {
+  min-height: 72px;
+}
+
+.inventory-table .table-row strong {
+  font-size: 15px;
+}
+
+.inventory-table .table-row small {
+  display: block;
+  margin-top: 4px;
+}
+
+/* Better spacing after removing history panels */
+.invoice-panel {
+  margin-bottom: 18px;
+}
+
+@media (max-width: 1100px) {
+  .invoice-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .invoice-actions > button {
+    width: 100%;
+  }
+}
+
+.invoice-clear-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 14px;
+}
+
+.medicine-form .invoice-clear-all-btn {
+  width: 180px;
+  height: 46px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 12px;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.medicine-form .invoice-clear-all-btn:hover {
+  background: #ef4444;
+  color: white;
+}
+
+/* CLEAN INVENTORY REWORK */
+.inventory-header {
+  align-items: center;
+}
+
+.inventory-header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.inventory-header-actions button {
+  min-width: 150px;
+}
+
+.inventory-header-actions .secondary-btn {
+  background: #0f766e;
+}
+
+.stock-table {
+  margin-top: 0;
+}
+
+.stock-table .table-header {
+  border-radius: 24px 24px 0 0;
+}
+
+.stock-table .table-row {
+  min-height: 74px;
+}
+
+.invoice-panel {
+  margin-bottom: 120px;
+}
+
+.invoice-items {
+  display: grid;
+  gap: 10px;
+  overflow-x: auto;
+}
+
+.invoice-item-header,
+.invoice-item-row {
+  display: grid;
+  grid-template-columns:
+    180px
+    190px
+    90px
+    90px
+    120px
+    145px
+    100px
+    100px
+    90px
+    90px
+    100px;
+  gap: 8px;
+  align-items: center;
+  min-width: 1300px;
+}
+
+.invoice-item-header {
+  background: #0f172a;
+  color: white;
+  padding: 12px;
+  border-radius: 14px;
+  font-weight: 800;
+}
+
+.invoice-item-row {
+  background: #f8fafc;
+  padding: 10px;
+  border-radius: 14px;
+}
+
+.invoice-item-row input,
+.invoice-item-row select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+}
+
+.invoice-item-row input:disabled {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.invoice-actions {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: 160px 1fr 240px;
+  gap: 14px;
+  align-items: center;
+}
+
+.invoice-actions > button {
+  height: 46px;
+  border: none;
+  border-radius: 12px;
+  background: #2563eb;
+  color: white;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.invoice-actions > button:first-child {
+  background: #0f766e;
+}
+
+.invoice-summary-bar {
+  margin-top: 0;
+  min-height: 46px;
+  padding: 10px 14px;
+}
+
+.invoice-summary-bar strong {
+  font-size: 20px;
+}
+
+.invoice-summary-bar button {
+  height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+@media (max-width: 1100px) {
+  .inventory-header-actions {
+    flex-direction: column;
+  }
+
+  .invoice-actions {
+    grid-template-columns: 1fr;
+  }
+}

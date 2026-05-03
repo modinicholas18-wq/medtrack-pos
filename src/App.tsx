@@ -1,4 +1,4 @@
-import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import {
@@ -143,21 +143,25 @@ function App() {
   const [invoiceSupplier, setInvoiceSupplier] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState("");
-  const [invoiceItems, setInvoiceItems] = useState<any[]>([
-    {
-      product_id: "",
-      product_name: "",
-      brand: "",
-      quantity: "",
-      bonus_quantity: "",
-      batch_number: "",
-      expiry_date: "",
-      pack_size: "",
-      unit_cost: "",
-      discount: "",
-      vat: "",
-    },
-  ]);
+  const emptyInvoiceItem = {
+  product_id: "",
+  product_name: "",
+  brand: "",
+  quantity: "",
+  bonus_quantity: "",
+  batch_number: "",
+  expiry_date: "",
+  pack_size: "",
+  unit_cost: "",
+  selling_price: "",
+  discount: "",
+  vat: "",
+};
+
+const [invoiceItems, setInvoiceItems] = useState<any[]>([
+  { ...emptyInvoiceItem },
+]);
+  const [showInvoiceReceiving, setShowInvoiceReceiving] = useState(false);
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -453,22 +457,7 @@ function updateInvoiceItem(index: number, field: string, value: string) {
 }
 
 function addInvoiceItemRow() {
-  setInvoiceItems([
-    ...invoiceItems,
-    {
-      product_id: "",
-      product_name: "",
-      brand: "",
-      quantity: "",
-      bonus_quantity: "",
-      batch_number: "",
-      expiry_date: "",
-      pack_size: "",
-      unit_cost: "",
-      discount: "",
-      vat: "",
-    },
-  ]);
+  setInvoiceItems([...invoiceItems, { ...emptyInvoiceItem }]);
 }
 
 function removeInvoiceItemRow(index: number) {
@@ -478,21 +467,7 @@ function removeInvoiceItemRow(index: number) {
 }
 
 function resetInvoiceItems() {
-  setInvoiceItems([
-    {
-      product_id: "",
-      product_name: "",
-      brand: "",
-      quantity: "",
-      bonus_quantity: "",
-      batch_number: "",
-      expiry_date: "",
-      pack_size: "",
-      unit_cost: "",
-      discount: "",
-      vat: "",
-    },
-  ]);
+  setInvoiceItems([{ ...emptyInvoiceItem }]);
 }
 
 async function handleCreatePurchaseInvoice(event: React.FormEvent) {
@@ -520,6 +495,7 @@ async function handleCreatePurchaseInvoice(event: React.FormEvent) {
         batch_number: item.batch_number,
         expiry_date: item.expiry_date,
         pack_size: item.pack_size,
+        selling_price: Number(item.selling_price || 0),
         unit_cost: unitCost,
         discount,
         vat,
@@ -549,68 +525,228 @@ async function handleCreatePurchaseInvoice(event: React.FormEvent) {
   setInvoiceSupplier("");
   setInvoiceNumber("");
   setInvoiceDate("");
-  setInvoiceItems([
-    {
-      product_id: "",
-      product_name: "",
-      brand: "",
-      quantity: "",
-      bonus_quantity: "",
-      batch_number: "",
-      expiry_date: "",
-      pack_size: "",
-      unit_cost: "",
-      discount: "",
-      vat: "",
-    },
-  ]);
+  setInvoiceItems([{ ...emptyInvoiceItem }]);
 
   await loadProducts();
   await loadPurchaseInvoices();
   await loadReportsSummary(reportPeriod);
 }
 
-function handleInvoiceCsvImport(event: React.ChangeEvent<HTMLInputElement>) {
+function parseSellingPrice(value: any) {
+  const raw = String(value || "").trim().toLowerCase();
+
+  if (!raw) return "";
+
+  // Example: "250"
+  if (/^\d+(\.\d+)?$/.test(raw)) {
+    return String(Number(raw));
+  }
+
+  // Example: "8/tab" or "8 / tab"
+  const perUnitMatch = raw.match(/^(\d+(\.\d+)?)\s*\/\s*(tab|tabs|tablet|tablets|cap|caps|capsule|capsules)$/);
+
+  if (perUnitMatch) {
+    return String(Number(perUnitMatch[1]));
+  }
+
+  // Example: "50/10 tabs" or "60 / 14 tabs"
+  const packMatch = raw.match(/^(\d+(\.\d+)?)\s*\/\s*(\d+(\.\d+)?)\s*(tab|tabs|tablet|tablets|cap|caps|capsule|capsules)$/);
+
+  if (packMatch) {
+    const totalPrice = Number(packMatch[1]);
+    const units = Number(packMatch[3]);
+
+    if (units > 0) {
+      return String(Number((totalPrice / units).toFixed(2)));
+    }
+  }
+
+  // If unreadable, don't update product price
+  return "";
+}
+
+async function handleInvoiceCsvImport(
+  event: React.ChangeEvent<HTMLInputElement>
+) {
   const file = event.target.files?.[0];
 
   if (!file) return;
 
-  Papa.parse(file, {
-    header: true,
-    skipEmptyLines: true,
-    complete: (result) => {
-      const rows = result.data as any[];
+  try {
+    const buffer = await file.arrayBuffer();
 
-      const importedItems = rows.map((row) => ({
-        product_id: "",
-        product_name:
-          row.product_name ||
-          row.Product ||
-          row.product ||
-          row["Product Description"] ||
-          "",
-        brand: row.brand || row.Brand || "",
-        quantity: row.quantity || row.Qty || row.QTY || "",
-        bonus_quantity: row.bonus_quantity || row.Bonus || row.BONUS || "",
-        batch_number: row.batch_number || row.Batch || row["Batch No"] || "",
-        expiry_date: row.expiry_date || row.Expiry || row["Expiry Date"] || "",
-        pack_size: row.pack_size || row.Pack || row["Pack Size"] || "",
-        unit_cost: row.unit_cost || row.Cost || row.Price || "",
-        discount: row.discount || row.Disc || row.Discount || "",
-        vat: row.vat || row.VAT || "",
-      }));
+    const workbook = XLSX.read(buffer, {
+      type: "array",
+      cellDates: true,
+    });
 
-      setInvoiceItems(importedItems);
+    const firstSheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[firstSheetName];
 
-      alert(`Imported ${importedItems.length} invoice item(s) ✅`);
-    },
-    error: (error) => {
-      alert(error.message);
-    },
-  });
+    const rows = XLSX.utils.sheet_to_json<any[]>(sheet, {
+      header: 1,
+      defval: "",
+      raw: false,
+      dateNF: "yyyy-mm-dd",
+    });
+
+    const normalizeHeader = (value: any) =>
+      String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "")
+        .replace(/[^a-z0-9%#]/g, "");
+
+    const headerRowIndex = rows.findIndex((row: any[]) =>
+      row.some((cell) => normalizeHeader(cell) === "productdescription")
+    );
+
+    if (headerRowIndex === -1) {
+      alert("Could not find PRODUCT DESCRIPTION column in this invoice.");
+      event.target.value = "";
+      return;
+    }
+
+    const headers = rows[headerRowIndex].map((header: any) =>
+      normalizeHeader(header)
+    );
+
+    function getCell(row: any[], possibleHeaders: string[]) {
+      for (const header of possibleHeaders) {
+        const index = headers.indexOf(normalizeHeader(header));
+
+        if (index !== -1) {
+          return row[index];
+        }
+      }
+
+      return "";
+    }
+
+    function cleanText(value: any) {
+      return String(value || "").trim();
+    }
+
+    function cleanNumber(value: any) {
+      const cleaned = String(value || "")
+        .replace(/,/g, "")
+        .replace(/ksh/gi, "")
+        .replace(/%/g, "")
+        .trim();
+
+      const numberValue = Number(cleaned);
+
+      return Number.isFinite(numberValue) ? numberValue : 0;
+    }
+
+    function cleanExpiryDate(value: any) {
+      const raw = cleanText(value);
+
+      if (!raw) return "";
+
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        return raw;
+      }
+
+      // Handles Jun-28, Dec-27, etc.
+      if (/^[a-zA-Z]{3,9}-\d{2,4}$/.test(raw)) {
+        const [monthText, yearText] = raw.split("-");
+        const monthIndex = new Date(`${monthText} 1, 2000`).getMonth();
+
+        if (!Number.isNaN(monthIndex)) {
+          const year =
+            yearText.length === 2 ? Number(`20${yearText}`) : Number(yearText);
+
+          const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+          return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(
+            lastDay
+          ).padStart(2, "0")}`;
+        }
+      }
+
+      if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(raw)) {
+        const [day, month, yearRaw] = raw.split("/");
+        const year =
+          yearRaw.length === 2 ? `20${yearRaw}` : yearRaw.padStart(4, "20");
+
+        return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+      }
+
+      const parsed = new Date(raw);
+
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toISOString().slice(0, 10);
+      }
+
+      return raw;
+    }
+
+    const importedItems = rows
+      .slice(headerRowIndex + 1)
+      .map((row: any[]) => {
+        const productName = cleanText(
+          getCell(row, [
+            "PRODUCT DESCRIPTION",
+            "Product Description",
+            "product_name",
+            "Product",
+          ])
+        );
+
+        const quantity = cleanNumber(getCell(row, ["QTY", "Qty", "quantity"]));
+        const bonus = cleanNumber(getCell(row, ["BONUS", "Bonus"]));
+        const price = cleanNumber(getCell(row, ["PRICE", "Price", "Cost"]));
+        const discPercent = cleanNumber(getCell(row, ["DISC %", "Disc %"]));
+        const vat = cleanNumber(getCell(row, ["VAT", "Vat"]));
+        const retailPriceRaw = getCell(row, [
+          "Retail Price",
+          "RetailPrice",
+          "retail_price",
+          "Selling Price",
+          "selling_price",
+          "MRP",
+        ]);
+
+        const discountAmount =
+          discPercent > 0 && discPercent <= 100
+            ? (quantity * price * discPercent) / 100
+            : discPercent;
+
+        return {
+          ...emptyInvoiceItem,
+          product_id: "",
+          product_name: productName,
+          brand: "",
+          quantity: quantity ? String(quantity) : "",
+          bonus_quantity: bonus ? String(bonus) : "",
+          batch_number: cleanText(getCell(row, ["BATCH", "Batch"])),
+          expiry_date: cleanExpiryDate(getCell(row, ["EXPIRY", "Expiry"])),
+          pack_size: cleanText(getCell(row, ["PW", "Pack", "Pack Size"])),
+          unit_cost: price ? String(price) : "",
+          selling_price: parseSellingPrice(retailPriceRaw),
+          discount: discountAmount ? String(discountAmount) : "",
+          vat: vat ? String(vat) : "",
+        };
+      })
+      .filter((item) => item.product_name && item.quantity);
+
+    if (importedItems.length === 0) {
+      alert("No valid invoice items found in this file.");
+      event.target.value = "";
+      return;
+    }
+
+    setInvoiceItems(importedItems);
+
+    alert(`Imported ${importedItems.length} invoice item(s) ✅`);
+  } catch (error: any) {
+    console.error(error);
+    alert(error.message || "Failed to import invoice file");
+  }
 
   event.target.value = "";
 }
+
 async function handleRestock(event: React.FormEvent) {
   event.preventDefault();
 
@@ -619,31 +755,50 @@ async function handleRestock(event: React.FormEvent) {
     return;
   }
 
-  await window.api.restockProduct({
-    product_id: Number(restockProductId),
-    supplier_name: restockSupplier,
-    quantity_added: Number(restockQuantity),
-    buying_cost: Number(restockCost || 0),
-  });
+  const selectedProductId = Number(restockProductId);
+  const addedQuantity = Number(restockQuantity);
+  const newBuyingCost = Number(restockCost || 0);
 
-  alert("Stock updated ✅");
+  try {
+    await window.api.restockProduct({
+      product_id: selectedProductId,
+      supplier_name: restockSupplier,
+      quantity_added: addedQuantity,
+      buying_cost: newBuyingCost,
+    });
 
-  setRestockProductId("");
-  setRestockQuantity("");
-  setRestockSupplier("");
-  setRestockCost("");
+    setProducts((currentProducts) =>
+      currentProducts.map((product) =>
+        Number(product.id) === selectedProductId
+          ? {
+              ...product,
+              quantity: Number(product.quantity || 0) + addedQuantity,
+              buying_cost: newBuyingCost,
+            }
+          : product
+      )
+    );
 
-  await loadProducts();
-  await loadRestockHistory();
-  await loadReportsSummary(reportPeriod);
-  await logAction(
-    "STOCK_RESTOCKED",
-    `Restocked product ID ${restockProductId} by ${restockQuantity} units`
-  );
+    setRestockProductId("");
+    setRestockQuantity("");
+    setRestockSupplier("");
+    setRestockCost("");
+    setSearch("");
 
-  await loadAuditLogs();
+    alert("Stock updated ✅");
+
+    loadProducts();
+
+    logAction(
+      "STOCK_RESTOCKED",
+      `Restocked product ID ${selectedProductId} by ${addedQuantity} units`
+    );
+
+    loadAuditLogs();
+  } catch (err: any) {
+    alert(err.message || "Failed to update stock");
   }
-  
+}
   function startEditProduct(product: any) {
   setEditingProduct(product);
 
@@ -1917,545 +2072,257 @@ function renderReports() {
   }
 
   function renderInventory() {
-
-    const invoiceTotal = invoiceItems.reduce((sum, item) => {
+  const invoiceTotal = invoiceItems.reduce((sum, item) => {
     const q = Number(item.quantity || 0);
     const c = Number(item.unit_cost || 0);
     const d = Number(item.discount || 0);
     const v = Number(item.vat || 0);
+
     return sum + (q * c - d + v);
   }, 0);
-    const filteredProducts = products.filter((p) =>
-      `${p.name} ${p.brand}`.toLowerCase().includes(search.toLowerCase())
-    );
 
-    return (
-      <section className="inventory-container">
-        <div className="inventory-header">
-          <input
-            type="text"
-            placeholder="Search medicine or brand..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+  const filteredProducts = products.filter((p) =>
+    `${p.name} ${p.brand}`.toLowerCase().includes(search.toLowerCase())
+  );
 
+  return (
+    <section className="inventory-container">
+      <div className="inventory-header">
+        <input
+          type="text"
+          placeholder="Search medicine or brand..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+
+        <div className="inventory-header-actions">
           <button onClick={() => setShowForm(!showForm)}>
             {showForm ? "Close" : "+ Add Medicine"}
           </button>
-        </div>
 
-        {showForm && (
-          <div className="panel">
-            <div className="panel-head">
-              <h2>Add Medicine</h2>
+          <button
+            type="button"
+            className="secondary-btn"
+            onClick={() => setShowInvoiceReceiving(!showInvoiceReceiving)}
+          >
+            {showInvoiceReceiving ? "Hide Invoice" : "Receive by Invoice"}
+          </button>
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="panel">
+          <div className="panel-head">
+            <h2>Add Medicine</h2>
+            <p>Add a new medicine to inventory.</p>
+          </div>
+
+          <form className="medicine-form" onSubmit={handleAddMedicine}>
+            <div className="form-row">
+              <input
+                placeholder="Generic name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+
+              <input
+                placeholder="Brand"
+                value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+              />
             </div>
 
-            <form className="medicine-form" onSubmit={handleAddMedicine}>
-              <div className="form-row">
-                <input
-                  placeholder="Generic name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-                <input
-                  placeholder="Brand"
-                  value={brand}
-                  onChange={(e) => setBrand(e.target.value)}
-                />
-              </div>
+            <div className="form-row">
+              <input
+                type="number"
+                placeholder="Selling price"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+              />
 
-              <div className="form-row">
-                <input
-                  type="number"
-                  placeholder="Price"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                />
-                <input
-                  type="number"
-                  placeholder="Quantity"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                />
-              </div>
+              <input
+                type="number"
+                placeholder="Opening quantity"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+              />
+            </div>
 
-              <div className="form-row">
-                <select value={unit} onChange={(e) => setUnit(e.target.value)}>
-                  <option>Tablet</option>
-                  <option>Capsule</option>
-                  <option>Bottle</option>
-                  <option>Vial</option>
-                  <option>Tube</option>
-                </select>
+            <div className="form-row">
+              <select value={unit} onChange={(e) => setUnit(e.target.value)}>
+                <option>Tablet</option>
+                <option>Capsule</option>
+                <option>Bottle</option>
+                <option>Vial</option>
+                <option>Tube</option>
+              </select>
 
-                <input
-                  placeholder="Batch"
-                  value={batchNumber}
-                  onChange={(e) => setBatchNumber(e.target.value)}
-                />
-              </div>
+              <input
+                placeholder="Batch"
+                value={batchNumber}
+                onChange={(e) => setBatchNumber(e.target.value)}
+              />
+            </div>
 
-              <div className="form-row">
-                <input
-                  type="date"
-                  value={expiryDate}
-                  onChange={(e) => setExpiryDate(e.target.value)}
-                />
-                <input
-                  placeholder="Barcode"
-                  value={barcode}
-                  onChange={(e) => setBarcode(e.target.value)}
-                />
-              </div>
+            <div className="form-row">
+              <input
+                type="date"
+                value={expiryDate}
+                onChange={(e) => setExpiryDate(e.target.value)}
+              />
+
+              <input
+                placeholder="Barcode"
+                value={barcode}
+                onChange={(e) => setBarcode(e.target.value)}
+              />
+            </div>
+
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={requiresPrescription}
+                onChange={(e) => setRequiresPrescription(e.target.checked)}
+              />
+              Requires prescription
+            </label>
+
+            <button type="submit">Save Medicine</button>
+          </form>
+        </div>
+      )}
+
+      {editingProduct && (
+        <div className="panel edit-panel">
+          <div className="panel-head">
+            <h2>Edit Medicine</h2>
+            <p>Updating: {editingProduct.name}</p>
+          </div>
+
+          <form className="medicine-form" onSubmit={handleUpdateProduct}>
+            <div className="form-row">
+              <input
+                placeholder="Generic name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+              />
+
+              <input
+                placeholder="Brand"
+                value={editBrand}
+                onChange={(e) => setEditBrand(e.target.value)}
+              />
+            </div>
+
+            <div className="form-row">
+              <input
+                type="number"
+                placeholder="Selling price"
+                value={editPrice}
+                onChange={(e) => setEditPrice(e.target.value)}
+              />
+
+              <input
+                type="number"
+                placeholder="Quantity"
+                value={editQuantity}
+                onChange={(e) => setEditQuantity(e.target.value)}
+              />
+            </div>
+
+            <div className="form-row">
+              <select
+                value={editUnit}
+                onChange={(e) => setEditUnit(e.target.value)}
+              >
+                <option>Tablet</option>
+                <option>Capsule</option>
+                <option>Bottle</option>
+                <option>Vial</option>
+                <option>Tube</option>
+              </select>
+
+              <input
+                placeholder="Batch"
+                value={editBatchNumber}
+                onChange={(e) => setEditBatchNumber(e.target.value)}
+              />
+            </div>
+
+            <div className="form-row">
+              <input
+                type="date"
+                value={editExpiryDate}
+                onChange={(e) => setEditExpiryDate(e.target.value)}
+              />
+
+              <input
+                placeholder="Barcode"
+                value={editBarcode}
+                onChange={(e) => setEditBarcode(e.target.value)}
+              />
+            </div>
+
+            <div className="form-row">
+              <input
+                type="number"
+                placeholder="Buying cost"
+                value={editBuyingCost}
+                onChange={(e) => setEditBuyingCost(e.target.value)}
+              />
 
               <label className="checkbox-row">
                 <input
                   type="checkbox"
-                  checked={requiresPrescription}
-                  onChange={(e) => setRequiresPrescription(e.target.checked)}
+                  checked={editRequiresPrescription}
+                  onChange={(e) => setEditRequiresPrescription(e.target.checked)}
                 />
                 Requires prescription
               </label>
-
-              <button type="submit">Save Medicine</button>
-            </form>
-            {editingProduct && (
-              <div className="panel edit-panel">
-                <div className="panel-head">
-                  <h2>Edit Medicine</h2>
-                  <p>Updating: {editingProduct.name}</p>
-                </div>
-
-                <form className="medicine-form" onSubmit={handleUpdateProduct}>
-                  <div className="form-row">
-                    <input
-                      placeholder="Generic name"
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                    />
-
-                    <input
-                      placeholder="Brand"
-                      value={editBrand}
-                      onChange={(e) => setEditBrand(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="form-row">
-                    <input
-                      type="number"
-                      placeholder="Price"
-                      value={editPrice}
-                      onChange={(e) => setEditPrice(e.target.value)}
-                    />
-
-                    <input
-                      type="number"
-                      placeholder="Quantity"
-                      value={editQuantity}
-                      onChange={(e) => setEditQuantity(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="form-row">
-                    <select value={editUnit} onChange={(e) => setEditUnit(e.target.value)}>
-                      <option>Tablet</option>
-                      <option>Capsule</option>
-                      <option>Bottle</option>
-                      <option>Vial</option>
-                      <option>Tube</option>
-                    </select>
-
-                    <input
-                      placeholder="Batch"
-                      value={editBatchNumber}
-                      onChange={(e) => setEditBatchNumber(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="form-row">
-                    <input
-                      type="date"
-                      value={editExpiryDate}
-                      onChange={(e) => setEditExpiryDate(e.target.value)}
-                    />
-
-                    <input
-                      placeholder="Barcode"
-                      value={editBarcode}
-                      onChange={(e) => setEditBarcode(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="form-row">
-                    <input
-                      type="number"
-                      placeholder="Buying cost"
-                      value={editBuyingCost}
-                      onChange={(e) => setEditBuyingCost(e.target.value)}
-                    />
-
-                    <label className="checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={editRequiresPrescription}
-                        onChange={(e) => setEditRequiresPrescription(e.target.checked)}
-                      />
-                      Requires prescription
-                    </label>
-                  </div>
-
-                  <div className="form-actions">
-                    <button type="submit">Update Medicine</button>
-                    <button type="button" onClick={cancelEditProduct}>
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              </div>
-            )}
-          </div>
-        )}
-
-
-
-        <section className="lower-grid">
-          <div className="panel">
-            <div className="panel-head">
-              <h2>Receive / Restock Medicine</h2>
-              <p>Add stock to an existing medicine</p>
             </div>
 
-            <form className="medicine-form" onSubmit={handleRestock}>
-              <div className="form-row">
-                <select
-                  value={restockProductId}
-                  onChange={(e) => setRestockProductId(e.target.value)}
-                >
-                  <option value="">Select medicine</option>
-                  {products.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name} — {product.brand} ({product.quantity} {product.unit})
-                    </option>
-                  ))}
-                </select>
-
-                <input
-                  type="number"
-                  placeholder="Quantity received"
-                  value={restockQuantity}
-                  onChange={(e) => setRestockQuantity(e.target.value)}
-                />
-              </div>
-
-              <div className="form-row">
-              <select
-              value={restockSupplier}
-              onChange={(e) => setRestockSupplier(e.target.value)}
-            >
-                <option value="">Select supplier</option>
-                {suppliers.map((supplier) => (
-                  <option key={supplier.id} value={supplier.name}>
-                    {supplier.name}
-                  </option>
-                ))}
-            </select>
-
-                <input
-                  type="number"
-                  placeholder="Buying cost per batch"
-                  value={restockCost}
-                  onChange={(e) => setRestockCost(e.target.value)}
-                />
-              </div>
-
-              <button type="submit">Receive Stock</button>
-            </form>
-          </div>
-
-          <div className="panel">
-            <div className="panel-head">
-              <h2>Recent Restocks</h2>
-              <p>Latest stock receiving records</p>
+            <div className="form-actions">
+              <button type="submit">Update Medicine</button>
+              <button type="button" onClick={cancelEditProduct}>
+                Cancel
+              </button>
             </div>
-
-            <div className="inventory-table restock-table">
-              <div className="table-header">
-                <span>Medicine</span>
-                <span>Supplier</span>
-                <span>Qty</span>
-                <span>Date</span>
-              </div>
-
-              {restockHistory.length === 0 ? (
-                <p style={{ padding: "16px" }}>No restocks yet</p>
-              ) : (
-                restockHistory.map((item) => (
-                  <div className="table-row" key={item.id}>
-                    <span>{item.product_name}</span>
-                    <span>{item.supplier_name || "-"}</span>
-                    <span>{item.quantity_added}</span>
-                    <span>{new Date(item.created_at).toLocaleString("en-KE")}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="panel invoice-panel">
-  <div className="panel-head">
-    <h2>Receive Stock by Supplier Invoice</h2>
-    <p>Enter multiple medicines from one supplier invoice</p>
-  </div>
-
-  <form className="medicine-form" onSubmit={handleCreatePurchaseInvoice}>
-    <div className="form-row">
-      <select
-        value={invoiceSupplier}
-        onChange={(e) => setInvoiceSupplier(e.target.value)}
-      >
-        <option value="">Select supplier</option>
-        {suppliers.map((supplier) => (
-          <option key={supplier.id} value={supplier.id}>
-            {supplier.name}
-          </option>
-        ))}
-      </select>
-
-      <input
-        placeholder="Invoice number"
-        value={invoiceNumber}
-        onChange={(e) => setInvoiceNumber(e.target.value)}
-      />
-
-      <input
-        type="date"
-        value={invoiceDate}
-        onChange={(e) => setInvoiceDate(e.target.value)}
-      />
-    </div>
-
-    <div className="csv-import-box">
-  <label>
-    Import Invoice CSV
-    <input
-      type="file"
-      accept=".csv"
-      onChange={handleInvoiceCsvImport}
-    />
-  </label>
-
-  <small>
-    CSV columns: product_name, brand, quantity, bonus_quantity, batch_number,
-    expiry_date, pack_size, unit_cost, discount, vat
-  </small>
-</div>
-
-    <div className="invoice-items">
-      <div className="invoice-item-header">
-        <span>Product</span>
-        <span>Qty</span>
-        <span>Bonus</span>
-        <span>Batch</span>
-        <span>Expiry</span>
-        <span>Pack</span>
-        <span>Cost</span>
-        <span>Disc</span>
-        <span>VAT</span>
-        <span>Action</span>
-      </div>
-
-      {invoiceItems.map((item, index) => (
-        <div className="invoice-item-row" key={index}>
-          <select
-            value={item.product_id}
-            onChange={(e) =>
-              updateInvoiceItem(index, "product_id", e.target.value)
-            }
-          >
-            <option value="">New / select product</option>
-            {products.map((product) => (
-              <option key={product.id} value={product.id}>
-                {product.name} — {product.brand}
-              </option>
-            ))}
-          </select>
-
-          {!item.product_id && (
-            <input
-              placeholder="New product name"
-              value={item.product_name}
-              onChange={(e) =>
-                updateInvoiceItem(index, "product_name", e.target.value)
-              }
-            />
-          )}
-
-          <input
-            type="number"
-            placeholder="Qty"
-            value={item.quantity}
-            onChange={(e) =>
-              updateInvoiceItem(index, "quantity", e.target.value)
-            }
-          />
-
-          <input
-            type="number"
-            placeholder="Bonus"
-            value={item.bonus_quantity}
-            onChange={(e) =>
-              updateInvoiceItem(index, "bonus_quantity", e.target.value)
-            }
-          />
-
-          <input
-            placeholder="Batch"
-            value={item.batch_number}
-            onChange={(e) =>
-              updateInvoiceItem(index, "batch_number", e.target.value)
-            }
-          />
-
-          <input
-            type="date"
-            value={item.expiry_date}
-            onChange={(e) =>
-              updateInvoiceItem(index, "expiry_date", e.target.value)
-            }
-          />
-
-          <input
-            placeholder="Pack"
-            value={item.pack_size}
-            onChange={(e) =>
-              updateInvoiceItem(index, "pack_size", e.target.value)
-            }
-          />
-
-          <input
-            type="number"
-            placeholder="Cost"
-            value={item.unit_cost}
-            onChange={(e) =>
-              updateInvoiceItem(index, "unit_cost", e.target.value)
-            }
-          />
-
-          <input
-            type="number"
-            placeholder="Disc"
-            value={item.discount}
-            onChange={(e) =>
-              updateInvoiceItem(index, "discount", e.target.value)
-            }
-          />
-
-          <input
-            type="number"
-            placeholder="VAT"
-            value={item.vat}
-            onChange={(e) =>
-              updateInvoiceItem(index, "vat", e.target.value)
-            }
-          />
-
-          <button
-            type="button"
-            className="danger-btn"
-            onClick={() => removeInvoiceItemRow(index)}
-          >
-            Remove
-          </button>
+          </form>
         </div>
-      ))}
-    </div>
-
-    <button
-  type="button"
-  onClick={() => setInvoiceItems([{
-    product_id: "",
-    product_name: "",
-    brand: "",
-    quantity: "",
-    bonus_quantity: "",
-    batch_number: "",
-    expiry_date: "",
-    pack_size: "",
-    unit_cost: "",
-    discount: "",
-    vat: "",
-  }])}
->
-  Clear All
-</button>
-
-    <div className="form-actions">
-      <button type="button" onClick={addInvoiceItemRow}>
-        + Add Item
-      </button>
-
-      
-      <div className="invoice-summary-bar">
-        <div>
-          <small>Invoice Total</small>
-          <strong>KSh {invoiceTotal.toLocaleString()}</strong>
-        </div>
-
-        <button type="button" onClick={resetInvoiceItems}>
-          Clear Items
-        </button>
-      </div>
-
-      <button type="submit">Save Invoice & Update Stock</button>
-    </div>
-  </form>
-</section>
-
-  <section className="panel">
-    <div className="panel-head">
-      <h2>Recent Purchase Invoices</h2>
-      <p>Latest supplier invoices received</p>
-    </div>
-
-    <div className="inventory-table invoice-history-table">
-      <div className="table-header">
-        <span>Supplier</span>
-        <span>Invoice</span>
-        <span>Date</span>
-        <span>Total</span>
-      </div>
-
-      {purchaseInvoices.length === 0 ? (
-        <p style={{ padding: "16px" }}>No purchase invoices yet</p>
-      ) : (
-        purchaseInvoices.map((invoice) => (
-          <div className="table-row" key={invoice.id}>
-            <span>{invoice.supplier_name}</span>
-            <span>{invoice.invoice_number}</span>
-            <span>{invoice.invoice_date}</span>
-            <span>KSh {Number(invoice.grand_total || 0).toLocaleString()}</span>
-          </div>
-        ))
       )}
-    </div>
-  </section>
 
-        <div className="inventory-table">
-          <div className="table-header">
-            <span>Medicine</span>
-            <span>Stock</span>
-            <span>Price</span>
-            <span>Expiry</span>
-            <span>Batch</span>
-            <span>Rx</span>
-            <span>Actions</span>
+      <div className="inventory-table stock-table">
+        <div className="table-header">
+          <span>Medicine</span>
+          <span>Stock</span>
+          <span>Price</span>
+          <span>Expiry</span>
+          <span>Batch</span>
+          <span>Rx</span>
+          <span>Actions</span>
+        </div>
+
+        {filteredProducts.length === 0 ? (
+          <div className="table-row">
+            <span>
+              <strong>No medicines found</strong>
+              <small>
+                {products.length === 0
+                  ? "Add a medicine first."
+                  : "Clear the search box to show all medicines."}
+              </small>
+            </span>
+            <span>-</span>
+            <span>-</span>
+            <span>-</span>
+            <span>-</span>
+            <span>-</span>
+            <span>-</span>
           </div>
-
-          {filteredProducts.map((p) => {
+        ) : (
+          filteredProducts.map((p) => {
             const days = getDaysUntilExpiry(p.expiry_date);
-            const isLowStock = Number(p.quantity) <= 10;
+            const isLowStock = Number(p.quantity) <= lowStockLimit;
             const isExpired = days !== null && days < 0;
             const isNearExpiry = days !== null && days >= 0 && days <= 30;
 
@@ -2480,7 +2347,7 @@ function renderReports() {
                   {isLowStock && <small>Low stock</small>}
                 </span>
 
-                <span>KSh {Number(p.price).toLocaleString()}</span>
+                <span>KSh {Number(p.price || 0).toLocaleString()}</span>
 
                 <span>
                   {p.expiry_date || "-"}
@@ -2490,19 +2357,286 @@ function renderReports() {
 
                 <span>{p.batch_number || "-"}</span>
                 <span>{p.requires_prescription ? "Yes" : "No"}</span>
+
                 <span className="row-actions">
                   <button onClick={() => startEditProduct(p)}>Edit</button>
-                  <button className="danger-btn" onClick={() => handleDeleteProduct(p)}>
+                  <button
+                    className="danger-btn"
+                    onClick={() => handleDeleteProduct(p)}
+                  >
                     Delete
                   </button>
                 </span>
               </div>
             );
-          })}
+          })
+        )}
+      </div>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Receive / Restock Medicine</h2>
+          <p>Add stock to an existing medicine.</p>
         </div>
+
+        <form className="medicine-form" onSubmit={handleRestock}>
+          <div className="form-row">
+            <select
+              value={restockProductId}
+              onChange={(e) => setRestockProductId(e.target.value)}
+            >
+              <option value="">Select medicine</option>
+              {products.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.name} — {product.brand} ({product.quantity}{" "}
+                  {product.unit})
+                </option>
+              ))}
+            </select>
+
+            <input
+              type="number"
+              placeholder="Quantity received"
+              value={restockQuantity}
+              onChange={(e) => setRestockQuantity(e.target.value)}
+            />
+          </div>
+
+          <div className="form-row">
+            <select
+              value={restockSupplier}
+              onChange={(e) => setRestockSupplier(e.target.value)}
+            >
+              <option value="">Select supplier</option>
+              {suppliers.map((supplier) => (
+                <option key={supplier.id} value={supplier.name}>
+                  {supplier.name}
+                </option>
+              ))}
+            </select>
+
+            <input
+              type="number"
+              placeholder="Buying cost per unit/batch"
+              value={restockCost}
+              onChange={(e) => setRestockCost(e.target.value)}
+            />
+          </div>
+
+          <button type="submit">Receive Stock</button>
+        </form>
       </section>
-    );
-  }
+
+      {showInvoiceReceiving && (
+        <section className="panel invoice-panel">
+          <div className="panel-head">
+            <h2>Receive Stock by Supplier Invoice</h2>
+            <p>Use this only when entering multiple medicines from one invoice.</p>
+          </div>
+
+          <form className="medicine-form" onSubmit={handleCreatePurchaseInvoice}>
+            <div className="form-row">
+              <select
+                value={invoiceSupplier}
+                onChange={(e) => setInvoiceSupplier(e.target.value)}
+              >
+                <option value="">Select supplier</option>
+                {suppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                placeholder="Invoice number"
+                value={invoiceNumber}
+                onChange={(e) => setInvoiceNumber(e.target.value)}
+              />
+
+              <input
+                type="date"
+                value={invoiceDate}
+                onChange={(e) => setInvoiceDate(e.target.value)}
+              />
+            </div>
+
+            <div className="csv-import-box">
+              <label>
+                Import Invoice File
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  onChange={handleInvoiceCsvImport}
+                />
+              </label>
+
+              <small>
+                Accepted: Excel or CSV. Columns supported: PRODUCT DESCRIPTION, QTY, BONUS,
+                PW, BATCH, EXPIRY, PRICE, DISC %, VAT, TOTAL, Retail Price.
+              </small>
+            </div>
+
+            <div className="invoice-items">
+              <div className="invoice-item-header">
+                <span>Select</span>
+                <span>Product</span>
+                <span>Qty</span>
+                <span>Bonus</span>
+                <span>Batch</span>
+                <span>Expiry</span>
+                <span>Pack</span>
+                <span>Cost</span>
+                <span>Sell</span>
+                <span>Disc</span>
+                <span>VAT</span>
+                <span>Action</span>
+              </div>
+
+              {invoiceItems.map((item, index) => (
+                <div className="invoice-item-row" key={index}>
+                  <select
+                    value={item.product_id}
+                    onChange={(e) =>
+                      updateInvoiceItem(index, "product_id", e.target.value)
+                    }
+                  >
+                    <option value="">New / select</option>
+                    {products.map((product) => (
+                      <option key={product.id} value={product.id}>
+                        {product.name} — {product.brand}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    placeholder={
+                      item.product_id ? "Selected product" : "New product name"
+                    }
+                    value={item.product_name}
+                    disabled={Boolean(item.product_id)}
+                    onChange={(e) =>
+                      updateInvoiceItem(index, "product_name", e.target.value)
+                    }
+                  />
+
+                  <input
+                    type="number"
+                    placeholder="Qty"
+                    value={item.quantity}
+                    onChange={(e) =>
+                      updateInvoiceItem(index, "quantity", e.target.value)
+                    }
+                  />
+
+                  <input
+                    type="number"
+                    placeholder="Bonus"
+                    value={item.bonus_quantity}
+                    onChange={(e) =>
+                      updateInvoiceItem(
+                        index,
+                        "bonus_quantity",
+                        e.target.value
+                      )
+                    }
+                  />
+
+                  <input
+                    placeholder="Batch"
+                    value={item.batch_number}
+                    onChange={(e) =>
+                      updateInvoiceItem(index, "batch_number", e.target.value)
+                    }
+                  />
+
+                  <input
+                    type="date"
+                    value={item.expiry_date}
+                    onChange={(e) =>
+                      updateInvoiceItem(index, "expiry_date", e.target.value)
+                    }
+                  />
+
+                  <input
+                    placeholder="Pack"
+                    value={item.pack_size}
+                    onChange={(e) =>
+                      updateInvoiceItem(index, "pack_size", e.target.value)
+                    }
+                  />
+
+                  <input
+                    type="number"
+                    placeholder="Cost"
+                    value={item.unit_cost}
+                    onChange={(e) =>
+                      updateInvoiceItem(index, "unit_cost", e.target.value)
+                    }
+                  />
+
+                  <input
+                    type="number"
+                    placeholder="Sell"
+                    value={item.selling_price}
+                    onChange={(e) =>
+                      updateInvoiceItem(index, "selling_price", e.target.value)
+                    }
+                  />
+
+                  <input
+                    type="number"
+                    placeholder="Disc"
+                    value={item.discount}
+                    onChange={(e) =>
+                      updateInvoiceItem(index, "discount", e.target.value)
+                    }
+                  />
+
+                  <input
+                    type="number"
+                    placeholder="VAT"
+                    value={item.vat}
+                    onChange={(e) =>
+                      updateInvoiceItem(index, "vat", e.target.value)
+                    }
+                  />
+
+                  <button
+                    type="button"
+                    className="danger-btn invoice-remove-btn"
+                    onClick={() => removeInvoiceItemRow(index)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="invoice-actions">
+              <button type="button" onClick={addInvoiceItemRow}>
+                + Add Item
+              </button>
+
+              <div className="invoice-summary-bar">
+                <div>
+                  <small>Invoice Total</small>
+                  <strong>KSh {invoiceTotal.toLocaleString()}</strong>
+                </div>
+
+                <button type="button" onClick={resetInvoiceItems}>
+                  Clear Items
+                </button>
+              </div>
+
+              <button type="submit">Save Invoice & Update Stock</button>
+            </div>
+          </form>
+        </section>
+      )}
+    </section>
+  );
+}
 
   function renderReceipt() {
     if (!receipt) return null;
